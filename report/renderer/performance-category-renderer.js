@@ -201,24 +201,42 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
       filmstripEl && timelineEl.append(filmstripEl);
     }
 
-    // Insights
-    const insightAudits = category.auditRefs.filter(audit => audit.group === 'insights');
-    if (insightAudits.length) {
-      const [insightsGroupEl, insightsFooterEl] = this.renderAuditGroup(groups['insights']);
-      insightsGroupEl.classList.add('lh-audit-group--insights');
-      for (const audit of category.auditRefs.filter(audit => audit.group === 'insights')) {
-        const auditEl = this.renderAudit(audit);
-        insightsGroupEl.append(auditEl);
-      }
-      element.append(insightsGroupEl);
-      if (insightsFooterEl) {
-        element.append(insightsFooterEl);
-      }
+    const legacyAuditsSection =
+      this.renderFilterableSection(category, groups, 'diagnostics', metricAudits);
+    legacyAuditsSection?.classList.add('lh-perf-audits--legacy');
+
+    const experimentalInsightsSection =
+      this.renderFilterableSection(category, groups, 'insights', metricAudits);
+    experimentalInsightsSection?.classList.add('lh-perf-audits--experimental', 'lh-hidden');
+
+    if (legacyAuditsSection) element.append(legacyAuditsSection);
+    if (experimentalInsightsSection) element.append(experimentalInsightsSection);
+
+    const isNavigationMode = !options || options?.gatherMode === 'navigation';
+    if (isNavigationMode && category.score !== null) {
+      const el = createGauge(this.dom);
+      updateGauge(this.dom, el, category);
+      this.dom.find('.lh-score__gauge', element).replaceWith(el);
     }
+
+    return element;
+  }
+
+  /**
+   * @param {LH.ReportResult.Category} category
+   * @param {Object<string, LH.Result.ReportGroup>} groups
+   * @param {string} groupName
+   * @param {LH.ReportResult.AuditRef[]} metricAudits
+   * @return {Element|null}
+   */
+  renderFilterableSection(category, groups, groupName, metricAudits) {
+    if (!groups[groupName]) return null;
+
+    const element = this.dom.createElement('div');
 
     // Diagnostics
     const allDiagnostics = category.auditRefs
-      .filter(audit => audit.group === 'diagnostics')
+      .filter(audit => audit.group === groupName)
       .map(auditRef => {
         const {overallImpact, overallLinearImpact} = this.overallImpact(auditRef, metricAudits);
         const guidanceLevel = auditRef.result.guidanceLevel || 1;
@@ -233,8 +251,8 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
     const passedAudits = allDiagnostics
       .filter(audit => ReportUtils.showAsPassed(audit.auditRef.result));
 
-    const [diagnosticsGroupEl, diagnosticsFooterEl] = this.renderAuditGroup(groups['diagnostics']);
-    diagnosticsGroupEl.classList.add('lh-audit-group--diagnostics');
+    const [diagnosticsGroupEl, diagnosticsFooterEl] = this.renderAuditGroup(groups[groupName]);
+    diagnosticsGroupEl.classList.add(`lh-audit-group--${groupName}`);
 
     /**
      * @param {string} acronym
@@ -317,13 +335,6 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
     };
     const passedElem = this.renderClump('passed', clumpOpts);
     element.append(passedElem);
-
-    const isNavigationMode = !options || options?.gatherMode === 'navigation';
-    if (isNavigationMode && category.score !== null) {
-      const el = createGauge(this.dom);
-      updateGauge(this.dom, el, category);
-      this.dom.find('.lh-score__gauge', element).replaceWith(el);
-    }
 
     return element;
   }

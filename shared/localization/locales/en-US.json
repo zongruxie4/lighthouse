@@ -3473,6 +3473,9 @@
   "report/renderer/report-utils.js | dropdownDarkTheme": {
     "message": "Toggle Dark Theme"
   },
+  "report/renderer/report-utils.js | dropdownInsightsToggle": {
+    "message": "Toggle experimental insights"
+  },
   "report/renderer/report-utils.js | dropdownPrintExpanded": {
     "message": "Print Expanded"
   },
