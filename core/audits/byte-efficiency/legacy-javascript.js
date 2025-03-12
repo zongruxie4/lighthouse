@@ -5,8 +5,8 @@
  */
 
 /**
- * @fileoverview Identifies polyfills and transforms that should not be present if using module/nomodule pattern.
- * @see https://docs.google.com/document/d/1ItjJwAd6e0Ts6yMbvh8TN3BBh_sAd58rYE1whnpuxaA/edit Design document
+ * @fileoverview Identifies polyfills and transforms that should not be present if needing to support only Baseline browsers.
+ * @see https://docs.google.com/document/d/1ItjJwAd6e0Ts6yMbvh8TN3BBh_sAd58rYE1whnpuxaA/edit Design document (old, based on module/nomodule pattern)
  * @see https://docs.google.com/spreadsheets/d/1z28Au8wo8-c2UsM2lDVEOJcI3jOkb2c951xEBqzBKCc/edit?usp=sharing Legacy babel transforms / polyfills
  * ./core/scripts/legacy-javascript - verification tool.
  */
@@ -27,6 +27,12 @@ import * as i18n from '../../lib/i18n/i18n.js';
 import {estimateCompressionRatioForContent} from '../../lib/script-helpers.js';
 import {LH_ROOT} from '../../../shared/root.js';
 
+const polyfillModuleDataJson = fs.readFileSync(
+  `${LH_ROOT}/core/audits/byte-efficiency/polyfill-module-data.json`, 'utf-8');
+
+/** @type {import('../../scripts/legacy-javascript/create-polyfill-module-data.js').PolyfillModuleData} */
+const polyfillModuleData = JSON.parse(polyfillModuleDataJson);
+
 const graphJson = fs.readFileSync(
   `${LH_ROOT}/core/audits/byte-efficiency/polyfill-graph-data.json`, 'utf-8');
 
@@ -39,7 +45,7 @@ const UIStrings = {
   // eslint-disable-next-line max-len
   // TODO: developer.chrome.com article. this codelab is good starting place: https://web.dev/articles/codelab-serve-modern-code
   /** Description of a Lighthouse audit that tells the user about old JavaScript that is no longer needed. This is displayed after a user expands the section to see more. No character length limits. The last sentence starting with 'Learn' becomes link text to additional documentation. */
-  description: 'Polyfills and transforms enable legacy browsers to use new JavaScript features. However, many aren\'t necessary for modern browsers. For your bundled JavaScript, adopt a modern script deployment strategy using [module/nomodule feature detection](https://philipwalton.com/articles/deploying-es2015-code-in-production-today/) to reduce the amount of code shipped to modern browsers, while retaining support for legacy browsers. [Learn how to serve modern JavaScript](https://web.dev/articles/codelab-serve-modern-code)',
+  description: 'Polyfills and transforms enable legacy browsers to use new JavaScript features. However, many aren\'t necessary for modern browsers. Consider modifying your JavaScript build process to not transpile [Baseline](https://web.dev/baseline) features, unless you know you must support legacy browsers. [Learn why most sites can deploy ES6+ code without transpiling](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)',
   /** Warning text that an outdated version of the library "core-js" was found, and the developer should upgrade. */
   // eslint-disable-next-line max-len
   detectedCoreJs2Warning: 'Version 2 of core-js was detected on the page. You should upgrade to version 3 for many performance improvements.',
@@ -170,105 +176,31 @@ class LegacyJavascript extends ByteEfficiencyAudit {
       // TODO: perhaps this is the wrong place to check for a CDN polyfill. Remove?
       // expression += `|;e\\([^,]+,${qt(objectWithoutPrototype)},{${property}:`;
 
-      // core-js@2 minified pattern.
-      // $export($export.S,"Date",{now:function
-      expression += `|\\$export\\([^,]+,${qt(objectWithoutPrototype)},{${property}:`;
-
       // core-js@3 minified pattern.
       // {target:"Array",proto:true},{fill:fill
       // {target:"Array",proto:true,forced:!HAS_SPECIES_SUPPORT||!USES_TO_LENGTH},{filter:
       expression += `|{target:${qt(objectWithoutPrototype)}\\S*},{${property}:`;
     } else {
-      // WeakSet, etc.
-      expression += `|function ${property}\\(`;
+      // Detect polyfills for new classes: Map, Set, WeakSet, etc.
+      // TODO: so far, no class polyfills are enabled for detection.
+      // See `modulesToSkip` in create-polyfill-module-data.js
+
+      // collection("Map",
+      // expression += `|collection\\(${qt(property)},`;
     }
 
     return expression;
   }
 
-  static getPolyfillData() {
-    /** @type {Array<{name: string, modules: string[], corejs?: boolean}>} */
-    const data = [
-      {name: 'focus-visible', modules: ['focus-visible']},
-    ];
-
-    const coreJsPolyfills = [
-      ['Array.prototype.fill', 'es6.array.fill'],
-      ['Array.prototype.filter', 'es6.array.filter'],
-      ['Array.prototype.find', 'es6.array.find'],
-      ['Array.prototype.findIndex', 'es6.array.find-index'],
-      ['Array.prototype.forEach', 'es6.array.for-each'],
-      ['Array.from', 'es6.array.from'],
-      ['Array.isArray', 'es6.array.is-array'],
-      ['Array.prototype.map', 'es6.array.map'],
-      ['Array.of', 'es6.array.of'],
-      ['Array.prototype.some', 'es6.array.some'],
-      ['Date.now', 'es6.date.now'],
-      ['Date.prototype.toISOString', 'es6.date.to-iso-string'],
-      ['Date.prototype.toJSON', 'es6.date.to-json'],
-      ['Date.prototype.toString', 'es6.date.to-string'],
-      ['Function.prototype.name', 'es6.function.name'],
-      ['Number.isInteger', 'es6.number.is-integer'],
-      ['Number.isSafeInteger', 'es6.number.is-safe-integer'],
-      ['Object.defineProperties', 'es6.object.define-properties'],
-      ['Object.defineProperty', 'es6.object.define-property'],
-      ['Object.freeze', 'es6.object.freeze'],
-      ['Object.getPrototypeOf', 'es6.object.get-prototype-of'],
-      ['Object.isExtensible', 'es6.object.is-extensible'],
-      ['Object.isFrozen', 'es6.object.is-frozen'],
-      ['Object.isSealed', 'es6.object.is-sealed'],
-      ['Object.keys', 'es6.object.keys'],
-      ['Object.preventExtensions', 'es6.object.prevent-extensions'],
-      ['Object.seal', 'es6.object.seal'],
-      ['Object.setPrototypeOf', 'es6.object.set-prototype-of'],
-      ['Reflect.apply', 'es6.reflect.apply'],
-      ['Reflect.construct', 'es6.reflect.construct'],
-      ['Reflect.defineProperty', 'es6.reflect.define-property'],
-      ['Reflect.deleteProperty', 'es6.reflect.delete-property'],
-      ['Reflect.get', 'es6.reflect.get'],
-      ['Reflect.getOwnPropertyDescriptor', 'es6.reflect.get-own-property-descriptor'],
-      ['Reflect.getPrototypeOf', 'es6.reflect.get-prototype-of'],
-      ['Reflect.has', 'es6.reflect.has'],
-      ['Reflect.isExtensible', 'es6.reflect.is-extensible'],
-      ['Reflect.ownKeys', 'es6.reflect.own-keys'],
-      ['Reflect.preventExtensions', 'es6.reflect.prevent-extensions'],
-      ['Reflect.setPrototypeOf', 'es6.reflect.set-prototype-of'],
-      ['String.prototype.codePointAt', 'es6.string.code-point-at'],
-      ['String.raw', 'es6.string.raw'],
-      ['String.prototype.repeat', 'es6.string.repeat'],
-      ['Object.entries', 'es7.object.entries'],
-      ['Object.getOwnPropertyDescriptors', 'es7.object.get-own-property-descriptors'],
-      ['Object.values', 'es7.object.values'],
-    ];
-
-    for (const [name, coreJs2Module] of coreJsPolyfills) {
-      // es-shims follows a pattern for its packages.
-      // Tack it onto the corejs size estimation, as it is likely close in size.
-      const esShimModule = name.toLowerCase();
-      data.push({
-        name,
-        modules: [
-          coreJs2Module,
-          // corejs 3 module name
-          coreJs2Module
-            .replace('es6.', 'es.')
-            .replace('es7.', 'es.')
-            .replace('typed.', 'typed-array.'),
-          esShimModule,
-        ],
-        corejs: true,
-      });
-    }
-
-    return data;
+  static getPolyfillModuleData() {
+    return polyfillModuleData;
   }
 
   static getCoreJsPolyfillData() {
-    return this.getPolyfillData().filter(d => d.corejs).map(d => {
+    return this.getPolyfillModuleData().filter(d => d.corejs).map(d => {
       return {
         name: d.name,
-        coreJs2Module: d.modules[0],
-        coreJs3Module: d.modules[1],
+        coreJs3Module: d.modules[0],
       };
     });
   }
@@ -329,7 +261,7 @@ class LegacyJavascript extends ByteEfficiencyAudit {
   static detectAcrossScripts(matcher, scripts, bundles) {
     /** @type {Map<LH.Artifacts.Script, PatternMatchResult[]>} */
     const scriptToMatchResults = new Map();
-    const polyfillData = this.getPolyfillData();
+    const polyfillData = this.getPolyfillModuleData();
 
     for (const script of Object.values(scripts)) {
       if (!script.content) continue;

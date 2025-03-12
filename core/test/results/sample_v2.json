@@ -5132,12 +5132,12 @@
     "legacy-javascript": {
       "id": "legacy-javascript",
       "title": "Avoid serving legacy JavaScript to modern browsers",
-      "description": "Polyfills and transforms enable legacy browsers to use new JavaScript features. However, many aren't necessary for modern browsers. For your bundled JavaScript, adopt a modern script deployment strategy using [module/nomodule feature detection](https://philipwalton.com/articles/deploying-es2015-code-in-production-today/) to reduce the amount of code shipped to modern browsers, while retaining support for legacy browsers. [Learn how to serve modern JavaScript](https://web.dev/articles/codelab-serve-modern-code)",
+      "description": "Polyfills and transforms enable legacy browsers to use new JavaScript features. However, many aren't necessary for modern browsers. Consider modifying your JavaScript build process to not transpile [Baseline](https://web.dev/baseline) features, unless you know you must support legacy browsers. [Learn why most sites can deploy ES6+ code without transpiling](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)",
       "score": 0,
       "scoreDisplayMode": "metricSavings",
       "numericValue": 240,
       "numericUnit": "millisecond",
-      "displayValue": "Potential savings of 27 KiB",
+      "displayValue": "Potential savings of 40 KiB",
       "warnings": [],
       "metricSavings": {
         "FCP": 0,
@@ -5172,27 +5172,37 @@
         "items": [
           {
             "url": "http://localhost:10200/dobetterweb/third_party/aggressive-promise-polyfill.js",
-            "wastedBytes": 27588,
+            "wastedBytes": 40984,
             "subItems": {
               "type": "subitems",
               "items": [
                 {
-                  "signal": "Object.defineProperty",
+                  "signal": "Promise.allSettled",
                   "location": {
                     "type": "source-location",
                     "url": "http://localhost:10200/dobetterweb/third_party/aggressive-promise-polyfill.js",
                     "urlProvider": "network",
-                    "line": 2613,
+                    "line": 1392,
+                    "column": 21
+                  }
+                },
+                {
+                  "signal": "Object.create",
+                  "location": {
+                    "type": "source-location",
+                    "url": "http://localhost:10200/dobetterweb/third_party/aggressive-promise-polyfill.js",
+                    "urlProvider": "network",
+                    "line": 2629,
                     "column": 8
                   }
                 },
                 {
-                  "signal": "Object.defineProperties",
+                  "signal": "Object.getOwnPropertyDescriptor",
                   "location": {
                     "type": "source-location",
                     "url": "http://localhost:10200/dobetterweb/third_party/aggressive-promise-polyfill.js",
                     "urlProvider": "network",
-                    "line": 2623,
+                    "line": 2637,
                     "column": 8
                   }
                 }
@@ -5202,7 +5212,7 @@
           }
         ],
         "overallSavingsMs": 240,
-        "overallSavingsBytes": 27588,
+        "overallSavingsBytes": 40984,
         "sortedBy": [
           "wastedBytes"
         ],
@@ -10792,7 +10802,7 @@
         },
         {
           "values": {
-            "wastedBytes": 27588
+            "wastedBytes": 40984
           },
           "path": "audits[legacy-javascript].displayValue"
         }

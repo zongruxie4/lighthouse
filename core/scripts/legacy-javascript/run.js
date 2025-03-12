@@ -7,8 +7,9 @@
 /* eslint-disable no-console */
 
 import fs from 'fs';
+import util from 'util';
 import path from 'path';
-import {execFileSync} from 'child_process';
+import {execFile} from 'child_process';
 import assert from 'assert';
 
 import glob from 'glob';
@@ -19,13 +20,13 @@ import {networkRecordsToDevtoolsLog} from '../../test/network-records-to-devtool
 import {LH_ROOT} from '../../../shared/root.js';
 import {readJson} from '../../test/test-utils.js';
 
+const execFileAsync = util.promisify(execFile);
+
 const scriptDir = `${LH_ROOT}/core/scripts/legacy-javascript`;
 
 // Create variants in a directory named-cached by contents of this script and the lockfile.
 // This folder is in the CI cache, so that the time consuming part of this test only runs if
 // the output would change.
-removeCoreJs(); // (in case the script was canceled halfway - there shouldn't be a core-js dep checked in.)
-
 const hash = makeHash();
 const VARIANT_DIR = `${scriptDir}/variants/${hash}`;
 
@@ -42,37 +43,54 @@ const polyfills = LegacyJavascript.getCoreJsPolyfillData();
  * @param {string[]} args
  */
 function runCommand(command, args) {
-  return execFileSync(command, args, {cwd: scriptDir});
+  return execFileAsync(command, args, {cwd: scriptDir});
 }
 
 /**
  * @param {string} version
  */
-function installCoreJs(version) {
-  runCommand('yarn', [
+async function installCoreJs(version) {
+  await runCommand('yarn', [
     'add',
+    '-D',
     `core-js@${version}`,
   ]);
 }
 
-function removeCoreJs() {
+async function removeCoreJs() {
   try {
-    runCommand('yarn', [
+    await runCommand('yarn', [
       'remove',
       'core-js',
     ]);
   } catch (e) { }
 }
 
+/** @type {Promise<void>[]} */
+const allVariantPromises = [];
+
 /**
  * @param {{group: string, name: string, code: string, babelrc?: *}} options
  */
-async function createVariant(options) {
+function createVariant(options) {
+  allVariantPromises.push(processVariant(options));
+}
+
+async function waitForVariants() {
+  await Promise.all(allVariantPromises);
+  allVariantPromises.length = 0;
+}
+
+/**
+ * @param {{group: string, name: string, code: string, babelrc?: *}} options
+ */
+async function processVariant(options) {
   const {group, name, code, babelrc} = options;
   const dir = `${VARIANT_DIR}/${group}/${name.replace(/[^a-zA-Z0-9]+/g, '-')}`;
 
   if (!fs.existsSync(`${dir}/main.bundle.js`) && (STAGE === 'build' || STAGE === 'all')) {
     fs.mkdirSync(dir, {recursive: true});
+    fs.writeFileSync(`${dir}/variant.json`, JSON.stringify({group, name}, null, 2));
     fs.writeFileSync(`${dir}/package.json`, JSON.stringify({type: 'commonjs'}));
     fs.writeFileSync(`${dir}/main.js`, code);
     fs.writeFileSync(`${dir}/.babelrc`, JSON.stringify(babelrc || {}, null, 2));
@@ -82,7 +100,7 @@ async function createVariant(options) {
       `<title>${name}</title><script src=main.bundle.min.js></script><p>${name}</p>`);
 
     // Note: No babelrc will make babel a glorified `cp`.
-    const babelOutputBuffer = runCommand('yarn', [
+    const babelOutputBuffer = await runCommand('yarn', [
       'babel',
       `${dir}/main.js`,
       '--config-file', `${dir}/.babelrc`,
@@ -90,10 +108,13 @@ async function createVariant(options) {
       '-o', `${dir}/main.transpiled.js`,
       '--source-maps', 'inline',
     ]);
-    fs.writeFileSync(`${dir}/babel-stdout.txt`, babelOutputBuffer.toString());
+    fs.writeFileSync(`${dir}/babel-stdout.txt`, babelOutputBuffer.stdout.toString());
+    if (babelOutputBuffer.stderr) {
+      fs.writeFileSync(`${dir}/babel-stderr.txt`, babelOutputBuffer.stderr.toString());
+    }
 
     // Transform any require statements (like for core-js) into a big bundle.
-    runCommand('yarn', [
+    await runCommand('yarn', [
       'browserify',
       `${dir}/main.transpiled.js`,
       '-o', `${dir}/main.bundle.js`,
@@ -102,7 +123,7 @@ async function createVariant(options) {
     ]);
 
     // Minify.
-    runCommand('yarn', [
+    await runCommand('yarn', [
       'terser',
       `${dir}/main.bundle.js`,
       '-o', `${dir}/main.bundle.min.js`,
@@ -176,6 +197,7 @@ function makeSummary(legacyJavascriptFilename) {
   let totalSignals = 0;
   const variants = [];
   for (const dir of glob.sync('*/*', {cwd: VARIANT_DIR})) {
+    const {group, name} = readJson(`${VARIANT_DIR}/${dir}/variant.json`);
     /** @type {import('../../audits/byte-efficiency/byte-efficiency-audit.js').ByteEfficiencyProduct} */
     const legacyJavascript = readJson(`${VARIANT_DIR}/${dir}/${legacyJavascriptFilename}`);
     const items = /** @type {import('../../audits/byte-efficiency/legacy-javascript.js').Item[]} */(
@@ -188,7 +210,7 @@ function makeSummary(legacyJavascriptFilename) {
       }
     }
     totalSignals += signals.length;
-    variants.push({name: dir, signals: signals.join(', ')});
+    variants.push({group, name, dir, signals});
 
     if (dir.includes('core-js') && !legacyJavascriptFilename.includes('nomaps')) {
       const isCoreJs2Variant = dir.includes('core-js-2');
@@ -199,7 +221,7 @@ function makeSummary(legacyJavascriptFilename) {
   }
   return {
     totalSignals,
-    variantsMissingSignals: variants.filter(v => !v.signals).map(v => v.name),
+    variantsMissingSignals: variants.filter(v => v.signals.length === 0).map(v => v.name),
     variants,
   };
 }
@@ -242,43 +264,48 @@ function makeRequireCodeForPolyfill(module) {
 }
 
 async function main() {
-  const pluginGroups = [
-    ...plugins.map(plugin => [plugin]),
-    ['@babel/plugin-transform-regenerator', '@babel/transform-async-to-generator'],
-  ];
-  for (const pluginGroup of pluginGroups) {
-    await createVariant({
+  for (const plugin of plugins) {
+    createVariant({
       group: 'only-plugin',
-      name: pluginGroup.join('_'),
+      name: plugin,
       code: mainCode,
       babelrc: {
-        plugins: pluginGroup,
+        plugins: [plugin],
       },
     });
   }
 
-  for (const coreJsVersion of ['2.6.12', '3.40.0']) {
+  await waitForVariants();
+
+  for (const coreJsVersion of ['3.40.0']) {
     const major = coreJsVersion.split('.')[0];
-    removeCoreJs();
-    installCoreJs(coreJsVersion);
+    await removeCoreJs();
+    await installCoreJs(coreJsVersion);
 
     const moduleOptions = [
-      {esmodules: false, bugfixes: false},
-      // Output: https://gist.github.com/connorjclark/515d05094ffd1fc038894a77156bf226
-      {esmodules: true, bugfixes: false},
-      {esmodules: true, bugfixes: true},
+      {baseline: false, bugfixes: false},
+      {baseline: true, bugfixes: false},
+      {baseline: true, bugfixes: true},
     ];
-    for (const {esmodules, bugfixes} of moduleOptions) {
-      await createVariant({
-        group: `core-js-${major}-preset-env-esmodules`,
-        name: String(esmodules) + (bugfixes ? '_and_bugfixes' : ''),
+    for (const {baseline, bugfixes} of moduleOptions) {
+      createVariant({
+        group: `core-js-${major}-preset-env`,
+        name: `baseline_${baseline}_bugfixes_${bugfixes}`,
         code: `require('core-js');\n${mainCode}`,
         babelrc: {
           presets: [
             [
               '@babel/preset-env',
               {
-                targets: {esmodules},
+                targets: baseline ? [
+                  'chrome >0 and last 2.5 years',
+                  'edge >0 and last 2.5 years',
+                  'safari >0 and last 2.5 years',
+                  'firefox >0 and last 2.5 years',
+                  'and_chr >0 and last 2.5 years',
+                  'and_ff >0 and last 2.5 years',
+                  'ios >0 and last 2.5 years',
+                ] : undefined,
                 useBuiltIns: 'entry',
                 corejs: major,
                 bugfixes,
@@ -291,26 +318,26 @@ async function main() {
     }
 
     for (const polyfill of polyfills) {
-      const module = major === '2' ? polyfill.coreJs2Module : polyfill.coreJs3Module;
-      await createVariant({
+      createVariant({
         group: `core-js-${major}-only-polyfill`,
-        name: module,
-        code: makeRequireCodeForPolyfill(module),
+        name: polyfill.name,
+        code: makeRequireCodeForPolyfill(polyfill.coreJs3Module),
       });
     }
 
     const allPolyfillCode = polyfills.map(polyfill => {
-      const module = major === '2' ? polyfill.coreJs2Module : polyfill.coreJs3Module;
-      return makeRequireCodeForPolyfill(module);
+      return makeRequireCodeForPolyfill(polyfill.coreJs3Module);
     }).join('\n');
-    await createVariant({
+    createVariant({
       group: 'all-legacy-polyfills',
       name: `all-legacy-polyfills-core-js-${major}`,
       code: allPolyfillCode,
     });
+
+    await waitForVariants();
   }
 
-  removeCoreJs();
+  await removeCoreJs();
 
   let summary;
 
