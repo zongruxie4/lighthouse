@@ -282,16 +282,16 @@ Map {
         location: {line: 0, column: 0},
       },
       {
-        signal: 'Object.entries',
+        signal: 'Array.prototype.findLast',
         location: {line: 0, column: 0},
       },
       {
-        signal: 'Array.prototype.findLast',
+        signal: 'Object.entries',
         location: {line: 0, column: 0},
       },
     ]);
     expect(result.items[0].subItems.items).toHaveLength(3);
-    expect(result.items[0].wastedBytes).toBe(36422);
+    expect(result.items[0].wastedBytes).toBe(36369);
   });
 });
 
@@ -318,7 +318,7 @@ describe('LegacyJavaScript signals', () => {
           throw new Error([
             'Expected the following variants to have no signals:',
             '',
-            ...failingVariants.map(v => `${v.name} (got: ${v.signals})`),
+            ...failingVariants.map(v => `${v.name} ${v.bundle} (got: ${v.signals})`),
           ].join('\n'));
         }
       });
@@ -342,7 +342,7 @@ describe('LegacyJavaScript signals', () => {
           throw new Error([
             'Expected the following variants to detect its polyfill:',
             '',
-            ...failingVariants.map(v => `${v.name} (got: ${v.signals})`),
+            ...failingVariants.map(v => `${v.name} ${v.bundle} (got: ${v.signals})`),
           ].join('\n'));
         }
 
@@ -357,7 +357,7 @@ describe('LegacyJavaScript signals', () => {
           throw new Error([
             'Expected the following variants to detect its transform:',
             '',
-            ...failingVariants.map(v => `${v.name} (got: ${v.signals})`),
+            ...failingVariants.map(v => `${v.name} ${v.bundle} (got: ${v.signals})`),
           ].join('\n'));
         }
       });
