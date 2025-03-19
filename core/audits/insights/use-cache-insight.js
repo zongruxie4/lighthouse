@@ -6,27 +6,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {UIStrings} from '@paulirish/trace_engine/models/trace/insights/DuplicateJavaScript.js';
+import {UIStrings} from '@paulirish/trace_engine/models/trace/insights/UseCache.js';
 
 import {Audit} from '../audit.js';
 import * as i18n from '../../lib/i18n/i18n.js';
 import {adaptInsightToAuditProduct, makeNodeItemForNodeId} from './insight-audit.js';
 
 // eslint-disable-next-line max-len
-const str_ = i18n.createIcuMessageFn('node_modules/@paulirish/trace_engine/models/trace/insights/DuplicateJavaScript.js', UIStrings);
+const str_ = i18n.createIcuMessageFn('node_modules/@paulirish/trace_engine/models/trace/insights/UseCache.js', UIStrings);
 
-class DuplicateJavaScriptInsight extends Audit {
+class UseCacheInsight extends Audit {
   /**
    * @return {LH.Audit.Meta}
    */
   static get meta() {
     return {
-      id: 'duplicate-javascript-insight',
+      id: 'use-cache-insight',
       title: str_(UIStrings.title),
       failureTitle: str_(UIStrings.title),
       description: str_(UIStrings.description),
       guidanceLevel: 3, // TODO: confirm/change.
-      requiredArtifacts: ['traces', 'TraceElements', 'SourceMaps'],
+      requiredArtifacts: ['traces', 'TraceElements'],
     };
   }
 
@@ -37,7 +37,7 @@ class DuplicateJavaScriptInsight extends Audit {
    */
   static async audit(artifacts, context) {
     // TODO: implement.
-    return adaptInsightToAuditProduct(artifacts, context, 'DuplicateJavaScript', (insight) => {
+    return adaptInsightToAuditProduct(artifacts, context, 'UseCache', (insight) => {
       /** @type {LH.Audit.Details.Table['headings']} */
       const headings = [
         /* eslint-disable max-len */
@@ -51,4 +51,4 @@ class DuplicateJavaScriptInsight extends Audit {
   }
 }
 
-export default DuplicateJavaScriptInsight;
+export default UseCacheInsight;
