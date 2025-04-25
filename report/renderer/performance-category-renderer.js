@@ -12,7 +12,20 @@ import {Globals} from './report-globals.js';
 import {Util} from '../../shared/util.js';
 import {createGauge, updateGauge} from './explodey-gauge.js';
 
+const LOCAL_STORAGE_INSIGHTS_KEY = '__lh__insights_audits_toggle_state';
+
+/**
+ * @typedef {('AUDITS'|'INSIGHTS')} InsightsExperimentState
+ */
+
+const DEFAULT_INSIGHTS_EXPERIMENT_STATE = 'AUDITS';
+
 export class PerformanceCategoryRenderer extends CategoryRenderer {
+  // Used as a fallback if localStorage isn't available. Less good as it only
+  // persists for the current page load, but better than nothing.
+  /** @type InsightsExperimentState*/
+  _memoryInsightToggleState = DEFAULT_INSIGHTS_EXPERIMENT_STATE;
+
   /**
    * @param {LH.ReportResult.AuditRef} audit
    * @return {!Element}
@@ -135,6 +148,42 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
   }
 
   /**
+   * @param {InsightsExperimentState} newState
+  **/
+  _persistInsightToggleToStorage(newState) {
+    try {
+      window.localStorage.setItem(LOCAL_STORAGE_INSIGHTS_KEY, newState);
+    } finally {
+      this._memoryInsightToggleState = newState;
+    }
+  }
+
+
+  /**
+   * @returns {InsightsExperimentState}
+  **/
+  _getInsightToggleState() {
+    try {
+      const fromStorage = window.localStorage.getItem(LOCAL_STORAGE_INSIGHTS_KEY);
+      if (fromStorage === 'AUDITS' || fromStorage === 'INSIGHTS') {
+        return fromStorage;
+      }
+    } catch {
+      return this._memoryInsightToggleState;
+    }
+    return 'AUDITS';
+  }
+
+
+  /**
+   * @param {HTMLButtonElement} button
+  **/
+  _setInsightToggleButtonText(button) {
+    const state = this._getInsightToggleState();
+    button.innerText = state === 'AUDITS' ? 'Try insights' : 'Go back to audits';
+  }
+
+  /**
    * @param {LH.ReportResult.Category} category
    * @param {Object<string, LH.Result.ReportGroup>} groups
    * @param {{gatherMode: LH.Result.GatherMode}=} options
@@ -201,6 +250,44 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
       filmstripEl && timelineEl.append(filmstripEl);
     }
 
+    // Insights / Audits toggle.
+    const container = this.dom.createChildOf(element, 'div', 'lh-perf-insights-toggle');
+
+    const feedbackLink = this.dom.createElement('a');
+    feedbackLink.innerText = 'your feedback';
+    feedbackLink.href = 'https://github.com/GoogleChrome/lighthouse/discussions/16462';
+    const textParts = [
+      this.dom.createTextNode('Later this year insights will replace audits. Let us know '),
+      feedbackLink,
+      this.dom.createTextNode('.'),
+    ];
+
+    const textSpan = this.dom.createChildOf(container, 'span', 'lh-perf-toggle-text');
+    const icon = this.dom.createElement('span', 'lh-perf-insights-icon');
+    icon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M18 13V11H22V13H18ZM19.2 20L16 17.6L17.2 16L20.4 18.4L19.2 20ZM17.2 8L16 6.4L19.2 4L20.4 5.6L17.2 8ZM5 19V15H4C3.45 15 2.975 14.8083 2.575 14.425C2.19167 14.025 2 13.55 2 13V11C2 10.45 2.19167 9.98333 2.575 9.6C2.975 9.2 3.45 9 4 9H8L13 6V18L8 15H7V19H5ZM11 14.45V9.55L8.55 11H4V13H8.55L11 14.45ZM14 15.35V8.65C14.45 9.05 14.8083 9.54167 15.075 10.125C15.3583 10.6917 15.5 11.3167 15.5 12C15.5 12.6833 15.3583 13.3167 15.075 13.9C14.8083 14.4667 14.45 14.95 14 15.35Z"/></svg>';
+    textSpan.appendChild(icon);
+    for (const part of textParts) {
+      textSpan.appendChild(part);
+    }
+
+    const buttonClasses = 'lh-button lh-button-insight-toggle';
+    const button = this.dom.createChildOf(container, 'button', buttonClasses);
+    this._setInsightToggleButtonText(button);
+
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      const swappableSection = this.dom.maybeFind('.lh-perf-audits--swappable');
+      if (swappableSection) {
+        this.dom.swapSectionIfPossible(swappableSection);
+      }
+      const currentState = this._getInsightToggleState();
+      const newState = currentState === 'AUDITS' ? 'INSIGHTS' : 'AUDITS';
+      this._persistInsightToggleToStorage(newState);
+      this._setInsightToggleButtonText(button);
+    });
+
+    container.appendChild(button);
+
     const legacyAuditsSection =
       this.renderFilterableSection(category, groups, ['diagnostics'], metricAudits);
     legacyAuditsSection?.classList.add('lh-perf-audits--swappable', 'lh-perf-audits--legacy');
@@ -219,6 +306,17 @@ export class PerformanceCategoryRenderer extends CategoryRenderer {
       if (experimentalInsightsSection) {
         this.dom.registerSwappableSections(legacyAuditsSection, experimentalInsightsSection);
       }
+    }
+    // Deal with the user loading the report and having toggled to Insights
+    // which is now stored in local storage. Put in a rAF otherwise this code
+    // runs before the DOM is created.
+    if (this._getInsightToggleState() === 'INSIGHTS') {
+      requestAnimationFrame(() => {
+        const swappableSection = this.dom.maybeFind('.lh-perf-audits--swappable');
+        if (swappableSection) {
+          this.dom.swapSectionIfPossible(swappableSection);
+        }
+      });
     }
 
     const isNavigationMode = !options || options?.gatherMode === 'navigation';
