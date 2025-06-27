@@ -146,6 +146,9 @@ describe('Navigation', function() {
 
     await navigateToLighthouseTab();
 
+    // TODO: currently the "LighthouseReportRenderer.linkifyNodeDetails" doesn't run for swappable sections.
+    await reportEl.$eval('.lh-button-insight-toggle', el => (el as HTMLElement).click());
+
     // Test element link behavior
     const lcpElementAudit = await waitForElementWithTextContent('Largest Contentful Paint element', reportEl);
     await lcpElementAudit.click();
